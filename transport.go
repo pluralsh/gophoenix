@@ -1,8 +1,13 @@
 package gophoenix
 
+import (
+	"net/http"
+	"net/url"
+)
+
 // Transport is used to establish the connection.
 type Transport interface {
-	Connect(url string, messageReceiver MessageReceiver, connectionReceiver ConnectionReceiver) error
+	Connect(url url.URL, header http.Header, messageReceiver MessageReceiver, connectionReceiver ConnectionReceiver) error
 	Push(data interface{}) error
 	Close()
 }

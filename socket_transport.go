@@ -1,24 +1,26 @@
 package gophoenix
 
 import (
-	"github.com/gorilla/websocket"
 	"net/http"
+	"net/url"
+
+	"github.com/gorilla/websocket"
 )
 
 type socketTransport struct {
 	socket *websocket.Conn
-	cr ConnectionReceiver
-	mr MessageReceiver
-	close chan struct{}
-	done chan struct{}
+	cr     ConnectionReceiver
+	mr     MessageReceiver
+	close  chan struct{}
+	done   chan struct{}
 }
 
-func (st *socketTransport) Connect(url string, mr MessageReceiver, cr ConnectionReceiver) error {
+func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
 	st.mr = mr
 	st.cr = cr
 
 	// TODO Add origin header, handle resp from dial
-	conn, _, err := websocket.DefaultDialer.Dial(url, http.Header{})
+	conn, _, err := websocket.DefaultDialer.Dial(url.String(), header)
 
 	if err != nil {
 		return err
@@ -36,7 +38,7 @@ func (st *socketTransport) Push(data interface{}) error {
 }
 
 func (st *socketTransport) Close() {
-	st.close<- struct {}{}
+	st.close <- struct{}{}
 	<-st.done
 }
 
@@ -63,5 +65,5 @@ func (st *socketTransport) listen() {
 func (st *socketTransport) stop() {
 	st.socket.Close()
 	st.cr.NotifyDisconnect()
-	func() {st.done<- struct{}{}} ()
+	func() { st.done <- struct{}{} }()
 }
