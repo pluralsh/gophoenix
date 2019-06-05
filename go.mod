@@ -1,4 +1,4 @@
-module bitbucket.org/e_roussillon/gophoenix
+module github.com/Douvi/gophoenix
 
 go 1.12
 
