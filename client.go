@@ -18,6 +18,7 @@ func NewWebsocketClient(cr ConnectionReceiver) *Client {
 	return &Client{
 		t:  &socketTransport{},
 		cr: cr,
+		mr: newMessageRouter(),
 	}
 }
 
@@ -27,9 +28,7 @@ func (c *Client) Connect(url url.URL, header http.Header) error {
 		return errors.New("transport not provided")
 	}
 
-	mr := newMessageRouter()
-
-	return c.t.Connect(url, header, mr, c.cr)
+	return c.t.Connect(url, header, c.mr, c.cr)
 }
 
 // Close closes the connection via the transport.
