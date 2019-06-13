@@ -8,13 +8,13 @@ import (
 // Channel represents a subscription to a topic. It is returned from the Client after joining a topic.
 type Channel struct {
 	topic string
-	t Transport
-	rc refCounter
-	rr *replyRouter
-	ln leaveNotifier
+	t     Transport
+	rc    refCounter
+	rr    *replyRouter
+	ln    leaveNotifier
 }
 
-type leaveNotifier func ()
+type leaveNotifier func()
 
 type refCounter interface {
 	nextRef() int64
@@ -47,10 +47,10 @@ func (ch *Channel) join(payload interface{}) error {
 
 func (ch *Channel) sendMessage(ref int64, event Event, payload interface{}) error {
 	msg := &Message{
-		Topic: ch.topic,
-		Event: event,
+		Topic:   ch.topic,
+		Event:   event,
 		Payload: payload,
-		Ref: ref,
+		Ref:     ref,
 	}
 
 	data, err := json.Marshal(msg)
@@ -58,6 +58,6 @@ func (ch *Channel) sendMessage(ref int64, event Event, payload interface{}) erro
 	if err != nil {
 		return fmt.Errorf("unable to marshal message: %s", err)
 	}
-
+	fmt.Println(data)
 	return ch.t.Push(data)
 }
