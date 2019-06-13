@@ -49,7 +49,7 @@ func (ch *Channel) sendMessage(ref int64, event Event, payload interface{}) erro
 	msg := &Message{
 		Topic:   ch.topic,
 		Event:   event,
-		Payload: payload,
+		Payload: "payload",
 		Ref:     ref,
 	}
 
