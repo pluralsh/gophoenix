@@ -58,6 +58,6 @@ func (ch *Channel) sendMessage(ref int64, event Event, payload interface{}) erro
 	if err != nil {
 		return fmt.Errorf("unable to marshal message: %s", err)
 	}
-	fmt.Println(data)
+	fmt.Println(msg)
 	return ch.t.Push(data)
 }
