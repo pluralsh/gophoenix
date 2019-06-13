@@ -1,11 +1,15 @@
 package gophoenix
 
-import "sync"
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+)
 
 type messageRouter struct {
 	mapLock sync.RWMutex
-	tr map[string]*topicReceiver
-	sub chan ChannelReceiver
+	tr      map[string]*topicReceiver
+	sub     chan ChannelReceiver
 }
 
 type topicReceiver struct {
@@ -15,12 +19,16 @@ type topicReceiver struct {
 
 func newMessageRouter() *messageRouter {
 	return &messageRouter{
-		tr: make(map[string]*topicReceiver),
+		tr:  make(map[string]*topicReceiver),
 		sub: make(chan ChannelReceiver),
 	}
 }
 
 func (mr *messageRouter) NotifyMessage(msg *Message) {
+	b, _ := json.Marshal(msg)
+	fmt.Println("NotifyMessage:")
+	fmt.Println(b)
+
 	mr.mapLock.RLock()
 	tr, ok := mr.tr[msg.Topic]
 	mr.mapLock.Unlock()

@@ -40,26 +40,13 @@ func (ch *Channel) join(payload interface{}) error {
 	return ch.sendMessage(ref, JoinEvent, payload)
 }
 
-type MessageTest struct {
-	Topic   string `json:"topic"`
-	Event   Event  `json:"event"`
-	Payload string `json:"payload"`
-	Ref     int64  `json:"ref"`
-}
-
 func (ch *Channel) sendMessage(ref int64, event Event, payload interface{}) error {
-	msg := &MessageTest{
+	msg := &Message{
 		Topic:   ch.topic,
 		Event:   event,
-		Payload: "payload",
+		Payload: payload,
 		Ref:     ref,
 	}
 
-	// data, err := json.Marshal(msg)
-
-	// if err != nil {
-	// 	return fmt.Errorf("unable to marshal message: %s", err)
-	// }
-	// fmt.Println(string(data))
 	return ch.t.Push(msg)
 }
