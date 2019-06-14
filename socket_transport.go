@@ -68,21 +68,21 @@ func (st *socketTransport) listen() {
 			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				return
 			}
+			continue
 		case <-st.close:
 			fmt.Println("Socket Closed")
 			return
 		}
+
 		var msg *Message
 		if err := st.socket.ReadJSON(msg); err != nil {
 			fmt.Println("Error ReadJSON:", err.Error())
 			continue
 		}
 
-		if msg != nil {
-			b, _ := json.Marshal(msg)
-			fmt.Println("Income Message:", string(b))
-			st.mr.NotifyMessage(msg)
-		}
+		b, _ := json.Marshal(msg)
+		fmt.Println("Income Message:", string(b))
+		st.mr.NotifyMessage(msg)
 	}
 }
 
