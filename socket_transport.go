@@ -29,6 +29,7 @@ type socketTransport struct {
 	mr     MessageReceiver
 	close  chan struct{}
 	done   chan struct{}
+	send   chan interface{}
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -43,20 +44,48 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	}
 
 	st.socket = conn
-	go st.listen()
+	go st.start()
+
 	st.cr.NotifyConnect()
 
 	return err
 }
 
+func (st *socketTransport) start() {
+	st.writer()
+	st.listen()
+}
+
 func (st *socketTransport) Push(data interface{}) error {
-	st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-	return st.socket.WriteJSON(data)
+	st.send <- data
+	return nil
 }
 
 func (st *socketTransport) Close() {
 	st.close <- struct{}{}
 	<-st.done
+}
+
+func (st *socketTransport) writer() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		st.stop()
+	}()
+	for {
+		select {
+		case message := <-st.send:
+			if err := st.socket.WriteJSON(message); err != nil {
+				fmt.Println("WriteJSON error:", err.Error())
+				return
+			}
+		case <-ticker.C:
+			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
+				fmt.Println("Push Heartbeat error:", err.Error())
+				return
+			}
+		}
+	}
 }
 
 func (st *socketTransport) listen() {
@@ -78,42 +107,24 @@ func (st *socketTransport) listen() {
 	// })
 
 	for {
-		time.Sleep(1 * time.Second)
-
-		select {
-		case <-ticker.C:
-			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-			// if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
-			// 	return
-			// }
-			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-				return
-			}
-			continue
-		case <-st.close:
-			fmt.Println("Socket Closed")
-			return
-		default:
-			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-			fmt.Println("Check Message")
-			// var msg *Message
-			_, p, err := st.socket.ReadMessage()
-			if err != nil {
-				fmt.Println("Error ReadJSON:", err.Error())
-				continue
-			}
-			fmt.Println("Go a message", string(p))
-			// if err := st.socket.ReadJSON(msg); err != nil {
-			// 	fmt.Println("Error ReadJSON:", err.Error())
-			// 	continue
-			// }
-			// fmt.Println("Go a message")
-			//
-			// b, _ := json.Marshal(msg)
-			// fmt.Println("Income Message:", string(b))
-			// st.mr.NotifyMessage(msg)
+		// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
+		fmt.Println("Check Message")
+		// var msg *Message
+		_, p, err := st.socket.ReadMessage()
+		if err != nil {
+			fmt.Println("Error ReadJSON:", err.Error())
 			continue
 		}
+		fmt.Println("Go a message", string(p))
+		// if err := st.socket.ReadJSON(msg); err != nil {
+		// 	fmt.Println("Error ReadJSON:", err.Error())
+		// 	continue
+		// }
+		// fmt.Println("Go a message")
+		//
+		// b, _ := json.Marshal(msg)
+		// fmt.Println("Income Message:", string(b))
+		// st.mr.NotifyMessage(msg)
 	}
 }
 
