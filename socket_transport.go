@@ -67,23 +67,26 @@ func (st *socketTransport) listen() {
 		st.stop()
 	}()
 	st.socket.SetReadLimit(maxMessageSize)
-	st.socket.SetReadDeadline(time.Now().Add(pongWait))
-	st.socket.SetPongHandler(func(string) error {
-		st.socket.SetReadDeadline(time.Now().Add(pongWait))
-		fmt.Println("Send heartbeat")
-		if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-			return err
-		}
-		return nil
-	})
+	// st.socket.SetReadDeadline(time.Now().Add(pongWait))
+	// st.socket.SetPongHandler(func(string) error {
+	// 	st.socket.SetReadDeadline(time.Now().Add(pongWait))
+	// 	fmt.Println("Send heartbeat")
+	// if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
+	// 	return err
+	// }
+	// 	return nil
+	// })
 
 	for {
 		time.Sleep(1 * time.Second)
 
 		select {
 		case <-ticker.C:
-			st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
+			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
+			// if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
+			// 	return
+			// }
+			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				return
 			}
 			continue
@@ -91,7 +94,7 @@ func (st *socketTransport) listen() {
 			fmt.Println("Socket Closed")
 			return
 		default:
-			st.socket.SetWriteDeadline(time.Now().Add(writeWait))
+			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 			fmt.Println("Check Message")
 			// var msg *Message
 			_, p, err := st.socket.ReadMessage()
