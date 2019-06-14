@@ -85,6 +85,7 @@ func (st *socketTransport) listen() {
 			b, _ := json.Marshal(msg)
 			fmt.Println("Income Message:", string(b))
 			st.mr.NotifyMessage(msg)
+			continue
 		}
 	}
 }
