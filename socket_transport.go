@@ -63,9 +63,7 @@ func (st *socketTransport) listen() {
 	for {
 		select {
 		case <-ticker.C:
-			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-				// if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 		case <-st.close:
@@ -74,15 +72,16 @@ func (st *socketTransport) listen() {
 			// default:
 			// 	fmt.Println("<-default:")
 			// 	// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-			// 	var msg *Message
-			// 	err := st.socket.ReadJSON(msg)
-			//
-			// 	if err != nil {
-			// 		continue
-			// 	}
-			// 	fmt.Println("msg")
-			// 	st.mr.NotifyMessage(msg)
+
 		}
+		var msg *Message
+		err := st.socket.ReadJSON(msg)
+
+		if err != nil {
+			continue
+		}
+		fmt.Println(msg)
+		st.mr.NotifyMessage(msg)
 	}
 }
 
