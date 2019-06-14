@@ -73,6 +73,7 @@ func (st *socketTransport) listen() {
 			fmt.Println("Socket Closed")
 			return
 		default:
+			fmt.Println("Check Message")
 			var msg *Message
 			if err := st.socket.ReadJSON(msg); err != nil {
 				fmt.Println("Error ReadJSON:", err.Error())
