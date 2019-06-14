@@ -63,6 +63,7 @@ func (st *socketTransport) listen() {
 	for {
 		select {
 		case <-ticker.C:
+			fmt.Println("<-ticker.C")
 			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 			fmt.Println("Send heartbeat")
 			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
@@ -70,8 +71,10 @@ func (st *socketTransport) listen() {
 				return
 			}
 		case <-st.close:
+			fmt.Println("<-st.close:")
 			return
 		default:
+			fmt.Println("<-default:")
 			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 		}
 
