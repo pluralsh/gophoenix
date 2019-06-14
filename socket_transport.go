@@ -76,16 +76,15 @@ func (st *socketTransport) listen() {
 		default:
 			fmt.Println("<-default:")
 			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-		}
+			var msg *Message
+			err := st.socket.ReadJSON(msg)
 
-		var msg *Message
-		err := st.socket.ReadJSON(msg)
-
-		if err != nil {
-			continue
+			if err != nil {
+				continue
+			}
+			fmt.Println("msg")
+			st.mr.NotifyMessage(msg)
 		}
-		fmt.Println("msg")
-		st.mr.NotifyMessage(msg)
 	}
 }
 
