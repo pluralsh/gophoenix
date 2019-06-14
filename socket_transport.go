@@ -11,7 +11,7 @@ import (
 
 const (
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 5 * time.Second
+	pongWait = 45 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
@@ -63,9 +63,7 @@ func (st *socketTransport) listen() {
 	for {
 		select {
 		case <-ticker.C:
-			fmt.Println("<-ticker.C")
 			// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-			fmt.Println("Send heartbeat")
 			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				// if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
