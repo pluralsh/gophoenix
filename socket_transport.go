@@ -1,6 +1,7 @@
 package gophoenix
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -65,6 +66,7 @@ func (st *socketTransport) listen() {
 		select {
 		case <-ticker.C:
 			st.socket.SetWriteDeadline(time.Now().Add(writeWait))
+			fmt.Println("Send heartbeat")
 			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				// if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
