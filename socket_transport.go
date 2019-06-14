@@ -81,6 +81,7 @@ func (st *socketTransport) listen() {
 				fmt.Println("Error ReadJSON:", err.Error())
 				continue
 			}
+			fmt.Println("Go a message")
 
 			b, _ := json.Marshal(msg)
 			fmt.Println("Income Message:", string(b))
