@@ -1,6 +1,7 @@
 package gophoenix
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -63,24 +64,22 @@ func (st *socketTransport) listen() {
 	for {
 		select {
 		case <-ticker.C:
+			fmt.Println("Send heartbeat")
 			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				return
 			}
 		case <-st.close:
-			fmt.Println("<-st.close:")
+			fmt.Println("Socket Closed")
 			return
-			// default:
-			// 	fmt.Println("<-default:")
-			// 	// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
-
 		}
 		var msg *Message
-		err := st.socket.ReadJSON(msg)
-
-		if err != nil {
+		if err := st.socket.ReadJSON(msg); err != nil {
+			fmt.Println("Error ReadJSON:", err.Error())
 			continue
 		}
-		fmt.Println(msg)
+
+		b, _ := json.Marshal(msg)
+		fmt.Println("Income Message:", string(b))
 		st.mr.NotifyMessage(msg)
 	}
 }
