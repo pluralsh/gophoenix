@@ -92,6 +92,7 @@ func (st *socketTransport) listen() {
 			fmt.Println("Socket Closed")
 			return
 		default:
+			st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 			fmt.Println("Check Message")
 			var msg *Message
 			if err := st.socket.ReadJSON(msg); err != nil {
