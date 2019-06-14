@@ -53,7 +53,7 @@ func (st *socketTransport) Close() {
 }
 
 func (st *socketTransport) listen() {
-	fmt.Println("Init heartbeat")
+	fmt.Println("Init heartbeat", pingPeriod.String())
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
