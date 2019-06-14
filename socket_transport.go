@@ -3,8 +3,20 @@ package gophoenix
 import (
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+const (
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer.
+	pongWait = 20 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait.
+	pingPeriod = (pongWait * 9) / 10
 )
 
 type socketTransport struct {
@@ -43,12 +55,24 @@ func (st *socketTransport) Close() {
 }
 
 func (st *socketTransport) listen() {
-	defer st.stop()
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		st.stop()
+	}()
+
 	for {
 		select {
+		case <-ticker.C:
+			st.socket.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
+				// if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		case <-st.close:
 			return
 		default:
+			st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 		}
 
 		var msg *Message
