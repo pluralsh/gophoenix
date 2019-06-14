@@ -84,7 +84,7 @@ func (st *socketTransport) listen() {
 		if err != nil {
 			continue
 		}
-
+		fmt.Println("msg")
 		st.mr.NotifyMessage(msg)
 	}
 }
