@@ -96,6 +96,7 @@ func (st *socketTransport) listen() {
 			// var msg *Message
 			_, p, err := st.socket.ReadMessage()
 			if err != nil {
+				fmt.Println("Error ReadJSON:", err.Error())
 				continue
 			}
 			fmt.Println("Go a message", string(p))
