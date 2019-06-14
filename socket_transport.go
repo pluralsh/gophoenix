@@ -72,17 +72,17 @@ func (st *socketTransport) listen() {
 		case <-st.close:
 			fmt.Println("Socket Closed")
 			return
-		}
+		default:
+			var msg *Message
+			if err := st.socket.ReadJSON(msg); err != nil {
+				fmt.Println("Error ReadJSON:", err.Error())
+				continue
+			}
 
-		var msg *Message
-		if err := st.socket.ReadJSON(msg); err != nil {
-			fmt.Println("Error ReadJSON:", err.Error())
-			continue
+			b, _ := json.Marshal(msg)
+			fmt.Println("Income Message:", string(b))
+			st.mr.NotifyMessage(msg)
 		}
-
-		b, _ := json.Marshal(msg)
-		fmt.Println("Income Message:", string(b))
-		st.mr.NotifyMessage(msg)
 	}
 }
 
