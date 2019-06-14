@@ -11,11 +11,17 @@ import (
 )
 
 const (
+	// Time allowed to write a message to the peer.
+	writeWait = 10 * time.Second
+
 	// Time allowed to read the next pong message from the peer.
 	pongWait = 45 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
+
+	// Maximum message size allowed from peer.
+	maxMessageSize = 512
 )
 
 type socketTransport struct {
@@ -45,6 +51,7 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 }
 
 func (st *socketTransport) Push(data interface{}) error {
+	st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 	return st.socket.WriteJSON(data)
 }
 
@@ -60,14 +67,24 @@ func (st *socketTransport) listen() {
 		ticker.Stop()
 		st.stop()
 	}()
+	st.socket.SetReadLimit(maxMessageSize)
+	st.socket.SetReadDeadline(time.Now().Add(pongWait))
+	st.socket.SetPongHandler(func(string) error {
+		st.socket.SetReadDeadline(time.Now().Add(pongWait))
+		fmt.Println("Send heartbeat")
+		if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
+			return err
+		}
+		return nil
+	})
 
 	for {
 		time.Sleep(1 * time.Second)
 
 		select {
 		case <-ticker.C:
-			fmt.Println("Send heartbeat")
-			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
+			st.socket.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := st.socket.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
 			continue
