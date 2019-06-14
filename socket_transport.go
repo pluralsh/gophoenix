@@ -78,9 +78,11 @@ func (st *socketTransport) listen() {
 			continue
 		}
 
-		b, _ := json.Marshal(msg)
-		fmt.Println("Income Message:", string(b))
-		st.mr.NotifyMessage(msg)
+		if msg != nil {
+			b, _ := json.Marshal(msg)
+			fmt.Println("Income Message:", string(b))
+			st.mr.NotifyMessage(msg)
+		}
 	}
 }
 
