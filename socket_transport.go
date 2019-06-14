@@ -62,6 +62,8 @@ func (st *socketTransport) listen() {
 	}()
 
 	for {
+		time.Sleep(1 * time.Second)
+
 		select {
 		case <-ticker.C:
 			fmt.Println("Send heartbeat")
