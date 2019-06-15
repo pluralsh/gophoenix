@@ -1,6 +1,7 @@
 package gophoenix
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -90,21 +91,21 @@ func (st *socketTransport) listen() {
 	st.socket.SetReadLimit(maxMessageSize)
 
 	for {
-		// var msg *Message
-		_, p, err := st.socket.ReadMessage()
-		if err != nil {
-			fmt.Println("Error ReadJSON:", err.Error())
-			continue
-		}
-		fmt.Println("Go a message", string(p))
-		// if err := st.socket.ReadJSON(msg); err != nil {
+		var msg *Message
+		// _, p, err := st.socket.ReadMessage()
+		// if err != nil {
 		// 	fmt.Println("Error ReadJSON:", err.Error())
 		// 	continue
 		// }
-		//
-		// b, _ := json.Marshal(msg)
-		// fmt.Println("Got a message:", string(b))
-		// st.mr.NotifyMessage(msg)
+		// fmt.Println("Got a message", string(p))
+		if err := st.socket.ReadJSON(msg); err != nil {
+			fmt.Println("Error ReadJSON:", err.Error())
+			continue
+		}
+
+		b, _ := json.Marshal(msg)
+		fmt.Println("Got a message:", string(b))
+		st.mr.NotifyMessage(msg)
 	}
 }
 
