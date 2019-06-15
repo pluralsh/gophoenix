@@ -28,9 +28,9 @@ func (mr *messageRouter) NotifyMessage(msg *Message) {
 	b, _ := json.Marshal(msg)
 	fmt.Println("NotifyMessage:", string(b))
 
-	mr.mapLock.RLock()
+	// mr.mapLock.RLock()
 	tr, ok := mr.tr[msg.Topic]
-	mr.mapLock.Unlock()
+	// mr.mapLock.Unlock()
 	if !ok {
 		return
 	}
