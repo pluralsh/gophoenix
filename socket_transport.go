@@ -44,6 +44,7 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	}
 
 	st.socket = conn
+	fmt.Println("Start goroutine")
 	go st.start()
 
 	st.cr.NotifyConnect()
@@ -52,7 +53,9 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 }
 
 func (st *socketTransport) start() {
+	fmt.Println("Start writer goroutine")
 	st.writer()
+	fmt.Println("Start listen goroutine")
 	st.listen()
 }
 
@@ -67,6 +70,7 @@ func (st *socketTransport) Close() {
 }
 
 func (st *socketTransport) writer() {
+	fmt.Println("Init heartbeat", pingPeriod.String())
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -89,10 +93,7 @@ func (st *socketTransport) writer() {
 }
 
 func (st *socketTransport) listen() {
-	fmt.Println("Init heartbeat", pingPeriod.String())
-	ticker := time.NewTicker(pingPeriod)
 	defer func() {
-		ticker.Stop()
 		st.stop()
 	}()
 	st.socket.SetReadLimit(maxMessageSize)
@@ -107,7 +108,6 @@ func (st *socketTransport) listen() {
 	// })
 
 	for {
-		// st.socket.SetWriteDeadline(time.Now().Add(writeWait))
 		fmt.Println("Check Message")
 		// var msg *Message
 		_, p, err := st.socket.ReadMessage()
