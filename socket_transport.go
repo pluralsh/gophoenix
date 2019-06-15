@@ -47,7 +47,7 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	st.socket = conn
 	fmt.Println("Start goroutine")
 	go st.writer()
-	// go st.listen()
+	go st.listen()
 
 	return err
 }
@@ -74,6 +74,7 @@ func (st *socketTransport) writer() {
 		fmt.Println("into for write")
 		select {
 		case message := <-st.send:
+			fmt.Println("writer message")
 			b, _ := json.Marshal(message)
 
 			if b != nil {
@@ -87,6 +88,7 @@ func (st *socketTransport) writer() {
 				return
 			}
 		case <-ticker.C:
+			fmt.Println("Send heartbeat")
 			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				fmt.Println("Push Heartbeat error:", err.Error())
 				return
