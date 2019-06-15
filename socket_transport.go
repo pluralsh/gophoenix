@@ -77,8 +77,8 @@ func (st *socketTransport) writer() {
 	for {
 		fmt.Println("into for write")
 		select {
-		case message := <-st.send:
-			fmt.Println("writer message")
+		case message, ok := <-st.send:
+			fmt.Println("writer message:", ok)
 			b, _ := json.Marshal(message)
 
 			if b != nil {
