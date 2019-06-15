@@ -19,31 +19,43 @@ type refCounter interface {
 func (ch *Channel) Leave(payload interface{}) error {
 	defer ch.ln()
 	ref := ch.rc.nextRef()
-	return ch.sendMessage(ref, LeaveEvent, payload)
+	return ch.sendMessage(ref, string(LeaveEvent), payload)
 }
 
 // Push sends a message on the topic.
-func (ch *Channel) Push(event Event, payload interface{}, replyHandler func(payload interface{})) error {
+func (ch *Channel) Push(event string, payload interface{}, replyHandler func(payload interface{})) error {
 	ref := ch.rc.nextRef()
 	ch.rr.subscribe(ref, replyHandler)
 	return ch.sendMessage(ref, event, payload)
 }
 
+// Reply sends a message on the topic.
+func (ch *Channel) Reply(ref int64, channel string, event string, payload interface{}, replyHandler func(payload interface{})) error {
+	msg := &Message{
+		Topic:   channel,
+		Event:   event,
+		Payload: payload,
+		Ref:     ref,
+	}
+
+	return ch.t.Push(msg)
+}
+
 // PushNoReply sends a message on the topic but does not provide a callback to receive replies.
-func (ch *Channel) PushNoReply(event Event, payload interface{}) error {
+func (ch *Channel) PushNoReply(event string, payload interface{}) error {
 	ref := ch.rc.nextRef()
 	return ch.sendMessage(ref, event, payload)
 }
 
 func (ch *Channel) join(payload interface{}) error {
 	ref := ch.rc.nextRef()
-	return ch.sendMessage(ref, JoinEvent, payload)
+	return ch.sendMessage(ref, string(JoinEvent), payload)
 }
 
-func (ch *Channel) sendMessage(ref int64, event Event, payload interface{}) error {
+func (ch *Channel) sendMessage(ref int64, event string, payload interface{}) error {
 	msg := &Message{
 		Topic:   ch.topic,
-		Event:   string(event),
+		Event:   event,
 		Payload: payload,
 		Ref:     ref,
 	}
