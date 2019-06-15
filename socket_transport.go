@@ -49,8 +49,6 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	go st.writer()
 	go st.listen()
 
-	st.cr.NotifyConnect()
-
 	return err
 }
 
@@ -100,6 +98,7 @@ func (st *socketTransport) listen() {
 		st.stop()
 	}()
 	st.socket.SetReadLimit(maxMessageSize)
+	st.cr.NotifyConnect()
 	// st.socket.SetReadDeadline(time.Now().Add(pongWait))
 	// st.socket.SetPongHandler(func(string) error {
 	// 	st.socket.SetReadDeadline(time.Now().Add(pongWait))
