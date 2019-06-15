@@ -1,6 +1,7 @@
 package gophoenix
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -73,6 +74,14 @@ func (st *socketTransport) writer() {
 	for {
 		select {
 		case message := <-st.send:
+			b, _ := json.Marshal(message)
+
+			if b != nil {
+				fmt.Println("WriteJSON:", string(b))
+			} else {
+				fmt.Println("WriteJSON:", message)
+			}
+
 			if err := st.socket.WriteJSON(message); err != nil {
 				fmt.Println("WriteJSON error:", err.Error())
 				return
