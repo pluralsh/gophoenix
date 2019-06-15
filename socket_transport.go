@@ -1,7 +1,6 @@
 package gophoenix
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,9 +10,6 @@ import (
 )
 
 const (
-	// Time allowed to write a message to the peer.
-	writeWait = 10 * time.Second
-
 	// Time allowed to read the next pong message from the peer.
 	pongWait = 45 * time.Second
 
@@ -30,7 +26,6 @@ type socketTransport struct {
 	mr     MessageReceiver
 	close  chan struct{}
 	done   chan struct{}
-	send   chan *Message
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -57,7 +52,10 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 
 func (st *socketTransport) Push(data *Message) error {
 	fmt.Println("Send data")
-	st.send <- data
+	if err := st.socket.WriteJSON(data); err != nil {
+		fmt.Println("WriteJSON error:", err.Error())
+		return err
+	}
 	return nil
 }
 
@@ -75,22 +73,7 @@ func (st *socketTransport) writer() {
 		st.stop()
 	}()
 	for {
-		fmt.Println("into for write")
 		select {
-		case message, ok := <-st.send:
-			fmt.Println("writer message:", ok)
-			b, _ := json.Marshal(message)
-
-			if b != nil {
-				fmt.Println("WriteJSON:", string(b))
-			} else {
-				fmt.Println("WriteJSON:", message)
-			}
-
-			if err := st.socket.WriteJSON(message); err != nil {
-				fmt.Println("WriteJSON error:", err.Error())
-				return
-			}
 		case <-ticker.C:
 			fmt.Println("Send heartbeat")
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
