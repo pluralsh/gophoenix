@@ -1,7 +1,6 @@
 package gophoenix
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -43,8 +42,6 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	fmt.Println("Start goroutine")
 	go st.writer()
 	go st.listen()
-
-	time.Sleep(1 * time.Second)
 
 	st.cr.NotifyConnect()
 	return err
@@ -103,8 +100,6 @@ func (st *socketTransport) listen() {
 			continue
 		}
 
-		b, _ := json.Marshal(msg)
-		fmt.Println("Got a message:", string(b))
 		st.mr.NotifyMessage(&msg)
 	}
 }
