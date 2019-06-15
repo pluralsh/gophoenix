@@ -1,6 +1,7 @@
 package gophoenix
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -32,7 +33,6 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	st.mr = mr
 	st.cr = cr
 
-	// TODO Add origin header, handle resp from dial
 	conn, _, err := websocket.DefaultDialer.Dial(url.String(), header)
 
 	if err != nil {
@@ -51,7 +51,7 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 }
 
 func (st *socketTransport) Push(data *Message) error {
-	fmt.Println("Send data")
+	fmt.Println("Send data:", data)
 	if err := st.socket.WriteJSON(data); err != nil {
 		fmt.Println("WriteJSON error:", err.Error())
 		return err
@@ -75,7 +75,6 @@ func (st *socketTransport) writer() {
 	for {
 		select {
 		case <-ticker.C:
-			fmt.Println("Send heartbeat")
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				fmt.Println("Push Heartbeat error:", err.Error())
 				return
@@ -90,35 +89,23 @@ func (st *socketTransport) listen() {
 		st.stop()
 	}()
 	st.socket.SetReadLimit(maxMessageSize)
-	// st.socket.SetReadDeadline(time.Now().Add(pongWait))
-	// st.socket.SetPongHandler(func(string) error {
-	// 	st.socket.SetReadDeadline(time.Now().Add(pongWait))
-	// 	fmt.Println("Send heartbeat")
-	// if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-	// 	return err
-	// }
-	// 	return nil
-	// })
 
 	for {
-		fmt.Println("into for listen")
-		fmt.Println("Check Message")
-		// var msg *Message
-		_, p, err := st.socket.ReadMessage()
-		if err != nil {
-			fmt.Println("Error ReadJSON:", err.Error())
-			continue
-		}
-		fmt.Println("Go a message", string(p))
-		// if err := st.socket.ReadJSON(msg); err != nil {
+		var msg *Message
+		// _, p, err := st.socket.ReadMessage()
+		// if err != nil {
 		// 	fmt.Println("Error ReadJSON:", err.Error())
 		// 	continue
 		// }
-		// fmt.Println("Go a message")
-		//
-		// b, _ := json.Marshal(msg)
-		// fmt.Println("Income Message:", string(b))
-		// st.mr.NotifyMessage(msg)
+		// fmt.Println("Go a message", string(p))
+		if err := st.socket.ReadJSON(msg); err != nil {
+			fmt.Println("Error ReadJSON:", err.Error())
+			continue
+		}
+
+		b, _ := json.Marshal(msg)
+		fmt.Println("Got a message:", string(b))
+		st.mr.NotifyMessage(msg)
 	}
 }
 
