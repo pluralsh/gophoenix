@@ -45,18 +45,12 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 
 	st.socket = conn
 	fmt.Println("Start goroutine")
-	go st.start()
+	go st.writer()
+	go st.listen()
 
 	st.cr.NotifyConnect()
 
 	return err
-}
-
-func (st *socketTransport) start() {
-	fmt.Println("Start writer goroutine")
-	st.writer()
-	fmt.Println("Start listen goroutine")
-	st.listen()
 }
 
 func (st *socketTransport) Push(data interface{}) error {
