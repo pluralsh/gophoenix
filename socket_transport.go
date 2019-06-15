@@ -47,7 +47,7 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	st.socket = conn
 	fmt.Println("Start goroutine")
 	go st.writer()
-	go st.listen()
+	// go st.listen()
 
 	return err
 }
@@ -66,10 +66,12 @@ func (st *socketTransport) writer() {
 	fmt.Println("Init heartbeat", pingPeriod.String())
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
+		fmt.Println("stop - writer")
 		ticker.Stop()
 		st.stop()
 	}()
 	for {
+		fmt.Println("into for write")
 		select {
 		case message := <-st.send:
 			b, _ := json.Marshal(message)
@@ -95,6 +97,7 @@ func (st *socketTransport) writer() {
 
 func (st *socketTransport) listen() {
 	defer func() {
+		fmt.Println("stop - listen")
 		st.stop()
 	}()
 	st.socket.SetReadLimit(maxMessageSize)
@@ -110,6 +113,7 @@ func (st *socketTransport) listen() {
 	// })
 
 	for {
+		fmt.Println("into for listen")
 		fmt.Println("Check Message")
 		// var msg *Message
 		_, p, err := st.socket.ReadMessage()
