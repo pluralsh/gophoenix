@@ -30,7 +30,7 @@ type socketTransport struct {
 	mr     MessageReceiver
 	close  chan struct{}
 	done   chan struct{}
-	send   chan interface{}
+	send   chan *Message
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -55,7 +55,8 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	return err
 }
 
-func (st *socketTransport) Push(data interface{}) error {
+func (st *socketTransport) Push(data *Message) error {
+	fmt.Println("Send data")
 	st.send <- data
 	return nil
 }
@@ -92,7 +93,7 @@ func (st *socketTransport) writer() {
 			}
 		case <-ticker.C:
 			fmt.Println("Send heartbeat")
-			if err := st.Push(Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
+			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				fmt.Println("Push Heartbeat error:", err.Error())
 				return
 			}

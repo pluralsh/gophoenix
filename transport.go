@@ -8,7 +8,7 @@ import (
 // Transport is used to establish the connection.
 type Transport interface {
 	Connect(url url.URL, header http.Header, messageReceiver MessageReceiver, connectionReceiver ConnectionReceiver) error
-	Push(data interface{}) error
+	Push(data *Message) error
 	Close()
 }
 
