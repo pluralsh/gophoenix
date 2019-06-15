@@ -43,7 +43,7 @@ func (ch *Channel) join(payload interface{}) error {
 func (ch *Channel) sendMessage(ref int64, event Event, payload interface{}) error {
 	msg := &Message{
 		Topic:   ch.topic,
-		Event:   event,
+		Event:   string(event),
 		Payload: payload,
 		Ref:     ref,
 	}

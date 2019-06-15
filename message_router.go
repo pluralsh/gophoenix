@@ -37,18 +37,18 @@ func (mr *messageRouter) NotifyMessage(msg *Message) {
 	}
 
 	switch msg.Event {
-	case ReplyEvent:
+	case string(ReplyEvent):
 		tr.rr.routeReply(msg)
-	case JoinEvent:
+	case string(JoinEvent):
 		tr.cr.OnJoin(msg.Payload)
-	case ErrorEvent:
+	case string(ErrorEvent):
 		tr.cr.OnJoinError(msg.Payload)
 		mr.unsubscribe(msg.Topic)
-	case CloseEvent:
+	case string(CloseEvent):
 		tr.cr.OnChannelClose(msg.Payload)
 		mr.unsubscribe(msg.Topic)
 	default:
-		tr.cr.OnMessage(msg.Event, msg.Payload)
+		tr.cr.OnMessage(string(msg.Event), msg.Payload)
 	}
 }
 
