@@ -32,6 +32,8 @@ type socketTransport struct {
 	done         chan struct{}
 	isConnected  bool
 	isConnecting bool
+	isListening  bool
+	isWriting    bool
 	mu           sync.RWMutex
 	url          url.URL
 	header       http.Header
@@ -43,17 +45,7 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	st.url = url
 	st.header = header
 
-	err := st.dial()
-	if err != nil {
-		return err
-	}
-
-	st.setIsConnected(true)
-	fmt.Println("Start goroutine")
-	go st.writer()
-	go st.listen()
-
-	return err
+	return st.connect(true)
 }
 
 func (st *socketTransport) Push(data *Message) error {
@@ -71,10 +63,15 @@ func (st *socketTransport) Close() {
 }
 
 func (st *socketTransport) writer() {
-	fmt.Println("Init heartbeat", pingPeriod.String())
+	if st.isWriting {
+		return
+	}
+	st.setIsWriting(true)
+
+	fmt.Println("Starting writer heartbeat: ", pingPeriod.String())
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
-		fmt.Println("stop - writer")
+		fmt.Println("Stopping writer...")
 		ticker.Stop()
 		st.stop()
 	}()
@@ -82,7 +79,7 @@ func (st *socketTransport) writer() {
 		select {
 		case <-ticker.C:
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-				fmt.Println("Push Heartbeat error:", err.Error())
+				fmt.Println("Error sending heartbeat:", err.Error())
 				st.closeAndReconnect()
 				return
 			}
@@ -91,6 +88,11 @@ func (st *socketTransport) writer() {
 }
 
 func (st *socketTransport) listen() {
+	if st.isListening {
+		return
+	}
+
+	st.setIsListening(true)
 	defer func() {
 		st.stop()
 	}()
@@ -99,7 +101,6 @@ func (st *socketTransport) listen() {
 	for {
 		var msg Message
 		if err := st.socket.ReadJSON(&msg); err != nil {
-			fmt.Println("Error ReadJSON:", err.Error())
 			continue
 		}
 
@@ -111,6 +112,16 @@ func (st *socketTransport) stop() {
 	st.socket.Close()
 	st.cr.NotifyDisconnect()
 	st.setIsConnected(false)
+	st.setIsListening(false)
+	st.setIsWriting(false)
+}
+
+func (st *socketTransport) shutdown() {
+	st.socket.Close()
+	st.cr.NotifyDisconnect()
+	st.setIsConnected(false)
+	st.setIsListening(false)
+	st.setIsWriting(false)
 	func() { st.done <- struct{}{} }()
 }
 
@@ -130,10 +141,10 @@ func (st *socketTransport) dial() error {
 
 func (st *socketTransport) closeAndReconnect() {
 	st.stop()
-	go st.connect()
+	go st.connect(false)
 }
 
-func (st *socketTransport) connect() {
+func (st *socketTransport) connect(initial bool) error {
 	b := getBackoff()
 	rand.Seed(time.Now().UTC().UnixNano())
 	st.setIsConnected(false)
@@ -145,14 +156,19 @@ func (st *socketTransport) connect() {
 		err := st.dial()
 
 		if err != nil {
+			if initial {
+				return err
+			}
 			fmt.Println(err)
-			fmt.Println("Error connecting - will try again in", nextItvl, "seconds.")
+			fmt.Println("Error connecting - will try again in ", nextItvl, "seconds.")
 			time.Sleep(nextItvl)
 		}
 
 		fmt.Printf("Dial: connection was successfully established with %s\n", st.url.String())
 		st.setIsConnected(true)
-		return
+		go st.listen()
+		go st.writer()
+		return nil
 	}
 }
 
@@ -161,7 +177,9 @@ func (st *socketTransport) setIsConnected(state bool) {
 	defer st.mu.Unlock()
 
 	st.isConnected = state
-	st.cr.NotifyConnect()
+	if state {
+		st.cr.NotifyConnect()
+	}
 }
 
 func (st *socketTransport) setIsConnecting(state bool) {
@@ -169,6 +187,20 @@ func (st *socketTransport) setIsConnecting(state bool) {
 	defer st.mu.Unlock()
 
 	st.isConnecting = state
+}
+
+func (st *socketTransport) setIsListening(state bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.isListening = state
+}
+
+func (st *socketTransport) setIsWriting(state bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.isWriting = state
 }
 
 func getBackoff() backoff.Backoff {
