@@ -142,6 +142,10 @@ func (st *socketTransport) dial() error {
 }
 
 func (st *socketTransport) closeAndReconnect() {
+	if st.getIsConnecting() {
+		return
+	}
+
 	st.stop()
 	go st.connect(false)
 }
