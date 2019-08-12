@@ -63,7 +63,7 @@ func (st *socketTransport) Close() {
 }
 
 func (st *socketTransport) writer() {
-	if st.isWriting {
+	if st.getIsWriting() {
 		return
 	}
 	st.setIsWriting(true)
@@ -88,7 +88,7 @@ func (st *socketTransport) writer() {
 }
 
 func (st *socketTransport) listen() {
-	if st.isListening {
+	if st.getIsListening() {
 		return
 	}
 	st.setIsListening(true)
@@ -164,6 +164,7 @@ func (st *socketTransport) connect(initial bool) error {
 			fmt.Println(err)
 			fmt.Println("Error connecting - will try again in ", nextItvl, "seconds.")
 			time.Sleep(nextItvl)
+			continue
 		}
 
 		fmt.Printf("Dial: connection was successfully established with %s\n", st.url.String())
@@ -172,6 +173,34 @@ func (st *socketTransport) connect(initial bool) error {
 		go st.writer()
 		return nil
 	}
+}
+
+func (st *socketTransport) getIsConnected() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isConnected
+}
+
+func (st *socketTransport) getIsConnecting() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isConnecting
+}
+
+func (st *socketTransport) getIsListening() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isListening
+}
+
+func (st *socketTransport) getIsWriting() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isWriting
 }
 
 func (st *socketTransport) setIsConnected(state bool) {
