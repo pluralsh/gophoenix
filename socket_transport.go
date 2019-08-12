@@ -2,11 +2,14 @@ package gophoenix
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jpillora/backoff"
 )
 
 const (
@@ -17,33 +20,39 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 512
+	maxMessageSize = 1 << 20
 )
 
 type socketTransport struct {
-	socket *websocket.Conn
-	cr     ConnectionReceiver
-	mr     MessageReceiver
-	close  chan struct{}
-	done   chan struct{}
+	socket       *websocket.Conn
+	dialer       *websocket.Dialer
+	cr           ConnectionReceiver
+	mr           MessageReceiver
+	close        chan struct{}
+	done         chan struct{}
+	isConnected  bool
+	isConnecting bool
+	mu           sync.RWMutex
+	url          url.URL
+	header       http.Header
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
 	st.mr = mr
 	st.cr = cr
+	st.url = url
+	st.header = header
 
-	conn, _, err := websocket.DefaultDialer.Dial(url.String(), header)
-
+	err := st.dial()
 	if err != nil {
 		return err
 	}
 
-	st.socket = conn
+	st.setIsConnected(true)
 	fmt.Println("Start goroutine")
 	go st.writer()
 	go st.listen()
 
-	st.cr.NotifyConnect()
 	return err
 }
 
@@ -74,6 +83,7 @@ func (st *socketTransport) writer() {
 		case <-ticker.C:
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				fmt.Println("Push Heartbeat error:", err.Error())
+				st.closeAndReconnect()
 				return
 			}
 		}
@@ -82,19 +92,12 @@ func (st *socketTransport) writer() {
 
 func (st *socketTransport) listen() {
 	defer func() {
-		fmt.Println("stop - listen")
 		st.stop()
 	}()
 	st.socket.SetReadLimit(maxMessageSize)
 
 	for {
 		var msg Message
-		// _, p, err := st.socket.ReadMessage()
-		// if err != nil {
-		// 	fmt.Println("Error ReadJSON:", err.Error())
-		// 	continue
-		// }
-		// fmt.Println("Got a message", string(p))
 		if err := st.socket.ReadJSON(&msg); err != nil {
 			fmt.Println("Error ReadJSON:", err.Error())
 			continue
@@ -107,5 +110,72 @@ func (st *socketTransport) listen() {
 func (st *socketTransport) stop() {
 	st.socket.Close()
 	st.cr.NotifyDisconnect()
+	st.setIsConnected(false)
 	func() { st.done <- struct{}{} }()
+}
+
+func (st *socketTransport) dial() error {
+	conn, _, err := st.dialer.Dial(st.url.String(), st.header)
+
+	if err != nil {
+		return err
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.socket = conn
+
+	return err
+}
+
+func (st *socketTransport) closeAndReconnect() {
+	st.stop()
+	go st.connect()
+}
+
+func (st *socketTransport) connect() {
+	b := getBackoff()
+	rand.Seed(time.Now().UTC().UnixNano())
+	st.setIsConnected(false)
+	st.setIsConnecting(true)
+	defer st.setIsConnecting(false)
+
+	for {
+		nextItvl := b.Duration()
+		err := st.dial()
+
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("Error connecting - will try again in", nextItvl, "seconds.")
+			time.Sleep(nextItvl)
+		}
+
+		fmt.Printf("Dial: connection was successfully established with %s\n", st.url.String())
+		st.setIsConnected(true)
+		return
+	}
+}
+
+func (st *socketTransport) setIsConnected(state bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.isConnected = state
+	st.cr.NotifyConnect()
+}
+
+func (st *socketTransport) setIsConnecting(state bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.isConnecting = state
+}
+
+func getBackoff() backoff.Backoff {
+	return backoff.Backoff{
+		Min:    5 * time.Second,
+		Max:    30 * time.Second,
+		Factor: 2,
+		Jitter: true,
+	}
 }

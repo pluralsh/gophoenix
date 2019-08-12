@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+
+	"github.com/gorilla/websocket"
 )
 
 // Client is the entry point for a phoenix channel connection.
@@ -14,9 +16,9 @@ type Client struct {
 }
 
 // NewWebsocketClient creates the default connection using a websocket as the transport.
-func NewWebsocketClient(cr ConnectionReceiver) *Client {
+func NewWebsocketClient(d *websocket.Dialer, cr ConnectionReceiver) *Client {
 	return &Client{
-		t:  &socketTransport{},
+		t:  &socketTransport{dialer: d},
 		cr: cr,
 		mr: newMessageRouter(),
 	}
