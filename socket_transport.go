@@ -91,17 +91,19 @@ func (st *socketTransport) listen() {
 	if st.isListening {
 		return
 	}
-
 	st.setIsListening(true)
+
 	defer func() {
-		st.stop()
+		st.closeAndReconnect()
 	}()
+
 	st.socket.SetReadLimit(maxMessageSize)
 
 	for {
 		var msg Message
 		if err := st.socket.ReadJSON(&msg); err != nil {
-			continue
+			fmt.Println("Error reading from socket.  Retrying connection: ", err)
+			return
 		}
 
 		st.mr.NotifyMessage(&msg)
