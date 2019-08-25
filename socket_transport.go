@@ -73,10 +73,11 @@ func (st *socketTransport) writer() {
 	defer func() {
 		fmt.Println("Stopping writer...")
 		ticker.Stop()
-		st.stop()
 	}()
 	for {
 		select {
+		case <-st.close:
+			return
 		case <-ticker.C:
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				fmt.Println("Error sending heartbeat:", err.Error())
@@ -121,6 +122,10 @@ func (st *socketTransport) stop() {
 func (st *socketTransport) shutdown() {
 	st.socket.Close()
 	st.cr.NotifyDisconnect()
+	st.close <- struct{}{}
+	st.setIsConnected(false)
+	st.setIsListening(false)
+	st.setIsWriting(false)
 }
 
 func (st *socketTransport) dial() error {
