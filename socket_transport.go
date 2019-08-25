@@ -58,11 +58,11 @@ func (st *socketTransport) Push(data *Message) error {
 }
 
 func (st *socketTransport) Close() {
-	st.close <- struct{}{}
-	<-st.done
+	st.shutdown()
 }
 
 func (st *socketTransport) writer() {
+	fmt.Println("Writer called.  Is writing? ", st.getIsWriting())
 	if st.getIsWriting() {
 		return
 	}
@@ -121,10 +121,6 @@ func (st *socketTransport) stop() {
 func (st *socketTransport) shutdown() {
 	st.socket.Close()
 	st.cr.NotifyDisconnect()
-	st.setIsConnected(false)
-	st.setIsListening(false)
-	st.setIsWriting(false)
-	func() { st.done <- struct{}{} }()
 }
 
 func (st *socketTransport) dial() error {
@@ -234,6 +230,7 @@ func (st *socketTransport) setIsListening(state bool) {
 func (st *socketTransport) setIsWriting(state bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	fmt.Println("Set writing to: ", state)
 
 	st.isWriting = state
 }
