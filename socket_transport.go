@@ -142,6 +142,7 @@ func (st *socketTransport) closeAndReconnect() {
 		return
 	}
 
+	st.close <- struct{}{}
 	st.stop()
 	go st.connect(false)
 }

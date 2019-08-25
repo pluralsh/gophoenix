@@ -18,7 +18,11 @@ type Client struct {
 // NewWebsocketClient creates the default connection using a websocket as the transport.
 func NewWebsocketClient(d *websocket.Dialer, cr ConnectionReceiver) *Client {
 	return &Client{
-		t:  &socketTransport{dialer: d},
+		t: &socketTransport{
+			dialer: d,
+			done:   make(chan struct{}),
+			close:  make(chan struct{}),
+		},
 		cr: cr,
 		mr: newMessageRouter(),
 	}
