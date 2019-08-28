@@ -23,6 +23,18 @@ const (
 	maxMessageSize = 1 << 20
 )
 
+// Logger is an interface for a pluggable logger component to be passed to the client
+type Logger interface {
+	Debug(...interface{})
+	Debugf(string, ...interface{})
+	Error(...interface{})
+	Errorf(string, ...interface{})
+	Info(...interface{})
+	Infof(string, ...interface{})
+	Warn(...interface{})
+	Warnf(string, ...interface{})
+}
+
 type socketTransport struct {
 	socket       *websocket.Conn
 	dialer       *websocket.Dialer
@@ -30,13 +42,14 @@ type socketTransport struct {
 	mr           MessageReceiver
 	close        chan struct{}
 	done         chan struct{}
+	reconnect    chan struct{}
+	logger       Logger
 	isConnected  bool
 	isConnecting bool
-	isListening  bool
-	isWriting    bool
 	mu           sync.RWMutex
 	url          url.URL
 	header       http.Header
+	backoff      *backoff.Backoff
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -49,9 +62,8 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 }
 
 func (st *socketTransport) Push(data *Message) error {
-	fmt.Println("Send data:", data)
 	if err := st.socket.WriteJSON(data); err != nil {
-		fmt.Println("WriteJSON error:", err.Error())
+		st.logger.Warn("WriteJSON error: ", err.Error())
 		return err
 	}
 	return nil
@@ -62,102 +74,71 @@ func (st *socketTransport) Close() {
 }
 
 func (st *socketTransport) writer() {
-	fmt.Println("Writer called.  Is writing? ", st.getIsWriting())
-	if st.getIsWriting() {
-		return
-	}
-	st.setIsWriting(true)
-
-	fmt.Println("Starting writer heartbeat: ", pingPeriod.String())
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		fmt.Println("Stopping writer...")
 		ticker.Stop()
 	}()
+
 	for {
 		select {
 		case <-st.close:
 			return
+		case <-st.done:
+			return
 		case <-ticker.C:
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-				fmt.Println("Error sending heartbeat:", err.Error())
-				st.closeAndReconnect()
-				return
+				st.logger.Warn("Error sending heartbeat:", err.Error())
+				st.reconnect <- struct{}{}
 			}
 		}
 	}
 }
 
 func (st *socketTransport) listen() {
-	if st.getIsListening() {
-		return
-	}
-	st.setIsListening(true)
-
-	defer func() {
-		st.closeAndReconnect()
-	}()
-
 	st.socket.SetReadLimit(maxMessageSize)
 
 	for {
 		var msg Message
 		if err := st.socket.ReadJSON(&msg); err != nil {
-			fmt.Println("Error reading from socket.  Retrying connection: ", err)
-			return
+			st.logger.Warn("Error reading from socket.  Retrying connection: ", err)
+			st.reconnect <- struct{}{}
 		}
 
 		st.mr.NotifyMessage(&msg)
 	}
 }
 
-func (st *socketTransport) stop() {
-	st.socket.Close()
-	st.cr.NotifyDisconnect()
-	st.setIsConnected(false)
-	st.setIsListening(false)
-	st.setIsWriting(false)
-}
-
 func (st *socketTransport) shutdown() {
 	st.socket.Close()
 	st.cr.NotifyDisconnect()
-	st.close <- struct{}{}
+	st.done <- struct{}{}
 	st.setIsConnected(false)
-	st.setIsListening(false)
-	st.setIsWriting(false)
 }
 
 func (st *socketTransport) dial() error {
+	if st.getIsConnecting() {
+		return nil
+	}
+
+	st.setIsConnected(false)
+	st.setIsConnecting(true)
+
 	conn, _, err := st.dialer.Dial(st.url.String(), st.header)
 
 	if err != nil {
 		return err
 	}
 
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.socket = conn
+	st.setSocket(conn)
+	st.setIsConnected(true)
 
 	return err
 }
 
-func (st *socketTransport) closeAndReconnect() {
-	if st.getIsConnecting() {
-		return
-	}
-
-	st.close <- struct{}{}
-	st.stop()
-	go st.connect(false)
-}
-
 func (st *socketTransport) connect(initial bool) error {
-	b := getBackoff()
+	b := st.getBackoff()
 	rand.Seed(time.Now().UTC().UnixNano())
-	st.setIsConnected(false)
-	st.setIsConnecting(true)
-	defer st.setIsConnecting(false)
 
 	for {
 		nextItvl := b.Duration()
@@ -167,17 +148,44 @@ func (st *socketTransport) connect(initial bool) error {
 			if initial {
 				return err
 			}
-			fmt.Println(err)
-			fmt.Println("Error connecting - will try again in ", nextItvl, "seconds.")
+			st.logger.Warnf("Error connecting - will try again in %v, seconds: %s\n", nextItvl, err)
 			time.Sleep(nextItvl)
 			continue
 		}
 
-		fmt.Printf("Dial: connection was successfully established with %s\n", st.url.String())
-		st.setIsConnected(true)
-		go st.listen()
-		go st.writer()
-		return nil
+		st.logger.Debugf("Dial: connection was successfully established with %s\n", st.url.String())
+		break
+	}
+
+	b.Reset()
+	go st.listen()
+	go st.writer()
+	go st.supervisor()
+	return nil
+}
+
+func (st *socketTransport) supervisor() {
+	for {
+		select {
+		case <-st.close:
+			return
+		case <-st.done:
+			return
+		case <-st.reconnect:
+			if st.getIsConnecting() {
+				continue
+			}
+
+			err := st.dial()
+			if err != nil {
+				duration := st.getBackoff().Duration()
+				st.logger.Warnf("Unable to establish connection, retrying in %s seconds", duration)
+				time.Sleep(duration)
+				st.reconnect <- struct{}{}
+			} else {
+				st.getBackoff().Reset()
+			}
+		}
 	}
 }
 
@@ -193,20 +201,6 @@ func (st *socketTransport) getIsConnecting() bool {
 	defer st.mu.Unlock()
 
 	return st.isConnecting
-}
-
-func (st *socketTransport) getIsListening() bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	return st.isListening
-}
-
-func (st *socketTransport) getIsWriting() bool {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	return st.isWriting
 }
 
 func (st *socketTransport) setIsConnected(state bool) {
@@ -226,26 +220,22 @@ func (st *socketTransport) setIsConnecting(state bool) {
 	st.isConnecting = state
 }
 
-func (st *socketTransport) setIsListening(state bool) {
+func (st *socketTransport) setSocket(conn *websocket.Conn) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	st.isListening = state
+	st.socket = conn
 }
 
-func (st *socketTransport) setIsWriting(state bool) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	fmt.Println("Set writing to: ", state)
-
-	st.isWriting = state
-}
-
-func getBackoff() backoff.Backoff {
-	return backoff.Backoff{
-		Min:    5 * time.Second,
-		Max:    30 * time.Second,
-		Factor: 2,
-		Jitter: true,
+func (st *socketTransport) getBackoff() *backoff.Backoff {
+	if st.backoff != nil {
+		return &backoff.Backoff{
+			Min:    5 * time.Second,
+			Max:    30 * time.Second,
+			Factor: 2,
+			Jitter: true,
+		}
 	}
+
+	return st.backoff
 }
