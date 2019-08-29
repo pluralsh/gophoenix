@@ -1,7 +1,6 @@
 package gophoenix
 
 import (
-	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -58,12 +57,15 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	st.url = url
 	st.header = header
 
-	return st.connect(true)
+	return st.connect()
 }
 
 func (st *socketTransport) Push(data *Message) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
 	if err := st.socket.WriteJSON(data); err != nil {
-		st.logger.Warn("WriteJSON error: ", err.Error())
+		st.logger.Warn("Error sending message via socket: ", err.Error())
 		return err
 	}
 	return nil
@@ -76,7 +78,6 @@ func (st *socketTransport) Close() {
 func (st *socketTransport) writer() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
-		fmt.Println("Stopping writer...")
 		ticker.Stop()
 	}()
 
@@ -87,9 +88,12 @@ func (st *socketTransport) writer() {
 		case <-st.done:
 			return
 		case <-ticker.C:
+			if st.getIsConnecting() {
+				continue
+			}
+
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-				st.logger.Warn("Error sending heartbeat:", err.Error())
-				st.reconnect <- struct{}{}
+				st.logger.Warn("Error sending heartbeat: ", err)
 			}
 		}
 	}
@@ -100,9 +104,17 @@ func (st *socketTransport) listen() {
 
 	for {
 		var msg Message
+
+		// While we don't have a connection, do not attempt to read
+		if st.getIsConnecting() {
+			time.Sleep(time.Second * 5)
+			continue
+		}
+
 		if err := st.socket.ReadJSON(&msg); err != nil {
 			st.logger.Warn("Error reading from socket.  Retrying connection: ", err)
 			st.reconnect <- struct{}{}
+			time.Sleep(time.Second * 1)
 		}
 
 		st.mr.NotifyMessage(&msg)
@@ -123,6 +135,7 @@ func (st *socketTransport) dial() error {
 
 	st.setIsConnected(false)
 	st.setIsConnecting(true)
+	defer st.setIsConnecting(false)
 
 	conn, _, err := st.dialer.Dial(st.url.String(), st.header)
 
@@ -136,28 +149,20 @@ func (st *socketTransport) dial() error {
 	return err
 }
 
-func (st *socketTransport) connect(initial bool) error {
-	b := st.getBackoff()
+func (st *socketTransport) connect() error {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	for {
-		nextItvl := b.Duration()
 		err := st.dial()
 
 		if err != nil {
-			if initial {
-				return err
-			}
-			st.logger.Warnf("Error connecting - will try again in %v, seconds: %s\n", nextItvl, err)
-			time.Sleep(nextItvl)
-			continue
+			return err
 		}
 
-		st.logger.Debugf("Dial: connection was successfully established with %s\n", st.url.String())
+		st.logger.Debug("Connection was successfully established with socket")
 		break
 	}
 
-	b.Reset()
 	go st.listen()
 	go st.writer()
 	go st.supervisor()
@@ -176,14 +181,25 @@ func (st *socketTransport) supervisor() {
 				continue
 			}
 
-			err := st.dial()
-			if err != nil {
-				duration := st.getBackoff().Duration()
-				st.logger.Warnf("Unable to establish connection, retrying in %s seconds", duration)
-				time.Sleep(duration)
-				st.reconnect <- struct{}{}
-			} else {
+			st.socket.Close()
+			st.setIsConnected(false)
+			st.cr.NotifyDisconnect()
+
+			// TODO: We are attempting to dial twice, not a big deal, but it causes a race condition
+			for {
+				if st.getIsConnecting() {
+					break
+				}
+
+				err := st.dial()
+				if err != nil {
+					duration := st.getBackoff().Duration()
+					time.Sleep(duration)
+					continue
+				}
+
 				st.getBackoff().Reset()
+				break
 			}
 		}
 	}
@@ -228,13 +244,14 @@ func (st *socketTransport) setSocket(conn *websocket.Conn) {
 }
 
 func (st *socketTransport) getBackoff() *backoff.Backoff {
-	if st.backoff != nil {
-		return &backoff.Backoff{
+	if st.backoff == nil {
+		b := &backoff.Backoff{
 			Min:    5 * time.Second,
 			Max:    30 * time.Second,
 			Factor: 2,
 			Jitter: true,
 		}
+		st.backoff = b
 	}
 
 	return st.backoff
