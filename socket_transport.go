@@ -35,20 +35,21 @@ type Logger interface {
 }
 
 type socketTransport struct {
-	socket       *websocket.Conn
-	dialer       *websocket.Dialer
-	cr           ConnectionReceiver
-	mr           MessageReceiver
-	close        chan struct{}
-	done         chan struct{}
-	reconnect    chan struct{}
-	logger       Logger
-	isConnected  bool
-	isConnecting bool
-	mu           sync.RWMutex
-	url          url.URL
-	header       http.Header
-	backoff      *backoff.Backoff
+	socket         *websocket.Conn
+	dialer         *websocket.Dialer
+	cr             ConnectionReceiver
+	mr             MessageReceiver
+	close          chan struct{}
+	done           chan struct{}
+	reconnect      chan struct{}
+	logger         Logger
+	isConnected    bool
+	isConnecting   bool
+	isReconnecting bool
+	mu             sync.RWMutex
+	url            url.URL
+	header         http.Header
+	backoff        *backoff.Backoff
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -106,14 +107,16 @@ func (st *socketTransport) listen() {
 		var msg Message
 
 		// While we don't have a connection, do not attempt to read
-		if st.getIsConnecting() {
+		if st.getIsConnecting() || st.getIsReconnecting() {
 			time.Sleep(time.Second * 5)
 			continue
 		}
 
 		if err := st.socket.ReadJSON(&msg); err != nil {
 			st.logger.Warn("Error reading from socket.  Retrying connection: ", err)
-			st.reconnect <- struct{}{}
+			if !st.getIsReconnecting() {
+				st.reconnect <- struct{}{}
+			}
 			time.Sleep(time.Second * 1)
 		}
 
@@ -177,27 +180,21 @@ func (st *socketTransport) supervisor() {
 		case <-st.done:
 			return
 		case <-st.reconnect:
-			if st.getIsConnecting() {
-				continue
-			}
-
 			st.socket.Close()
 			st.setIsConnected(false)
+			st.setIsReconnecting(true)
 			st.cr.NotifyDisconnect()
 
-			// TODO: We are attempting to dial twice, not a big deal, but it causes a race condition
 			for {
-				if st.getIsConnecting() {
-					break
-				}
-
 				err := st.dial()
 				if err != nil {
 					duration := st.getBackoff().Duration()
+					st.logger.Debugf("Unable to reconnect to socket.  Attempting again in %s\n", duration)
 					time.Sleep(duration)
 					continue
 				}
 
+				st.setIsReconnecting(false)
 				st.getBackoff().Reset()
 				break
 			}
@@ -219,12 +216,20 @@ func (st *socketTransport) getIsConnecting() bool {
 	return st.isConnecting
 }
 
+func (st *socketTransport) getIsReconnecting() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isReconnecting
+}
+
 func (st *socketTransport) setIsConnected(state bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	st.isConnected = state
 	if state {
+		time.Sleep(time.Millisecond * 200)
 		st.cr.NotifyConnect()
 	}
 }
@@ -234,6 +239,13 @@ func (st *socketTransport) setIsConnecting(state bool) {
 	defer st.mu.Unlock()
 
 	st.isConnecting = state
+}
+
+func (st *socketTransport) setIsReconnecting(state bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.isReconnecting = state
 }
 
 func (st *socketTransport) setSocket(conn *websocket.Conn) {
