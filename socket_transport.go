@@ -108,7 +108,7 @@ func (st *socketTransport) listen() {
 
 		// While we don't have a connection, do not attempt to read
 		if st.getIsConnecting() || st.getIsReconnecting() {
-			time.Sleep(time.Second * 5)
+			time.Sleep(time.Second * 3)
 			continue
 		}
 

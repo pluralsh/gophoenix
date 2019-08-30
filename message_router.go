@@ -25,7 +25,7 @@ func newMessageRouter() *messageRouter {
 func (mr *messageRouter) NotifyMessage(msg *Message) {
 	mr.mapLock.RLock()
 	tr, ok := mr.tr[msg.Topic]
-	mr.mapLock.Unlock()
+	mr.mapLock.RUnlock()
 
 	if !ok {
 		return
