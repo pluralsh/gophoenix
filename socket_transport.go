@@ -1,7 +1,6 @@
 package gophoenix
 
 import (
-	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -23,18 +22,34 @@ const (
 	maxMessageSize = 1 << 20
 )
 
+// Logger is an interface for a pluggable logger component to be passed to the client
+type Logger interface {
+	Debug(...interface{})
+	Debugf(string, ...interface{})
+	Error(...interface{})
+	Errorf(string, ...interface{})
+	Info(...interface{})
+	Infof(string, ...interface{})
+	Warn(...interface{})
+	Warnf(string, ...interface{})
+}
+
 type socketTransport struct {
-	socket       *websocket.Conn
-	dialer       *websocket.Dialer
-	cr           ConnectionReceiver
-	mr           MessageReceiver
-	close        chan struct{}
-	done         chan struct{}
-	isConnected  bool
-	isConnecting bool
-	mu           sync.RWMutex
-	url          url.URL
-	header       http.Header
+	socket         *websocket.Conn
+	dialer         *websocket.Dialer
+	cr             ConnectionReceiver
+	mr             MessageReceiver
+	close          chan struct{}
+	done           chan struct{}
+	reconnect      chan struct{}
+	logger         Logger
+	isConnected    bool
+	isConnecting   bool
+	isReconnecting bool
+	mu             sync.RWMutex
+	url            url.URL
+	header         http.Header
+	backoff        *backoff.Backoff
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -43,117 +58,169 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 	st.url = url
 	st.header = header
 
-	err := st.dial()
-	if err != nil {
-		return err
-	}
-
-	st.setIsConnected(true)
-	fmt.Println("Start goroutine")
-	go st.writer()
-	go st.listen()
-
-	return err
+	return st.connect()
 }
 
 func (st *socketTransport) Push(data *Message) error {
-	fmt.Println("Send data:", data)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
 	if err := st.socket.WriteJSON(data); err != nil {
-		fmt.Println("WriteJSON error:", err.Error())
+		st.logger.Warn("Error sending message via socket: ", err.Error())
 		return err
 	}
 	return nil
 }
 
 func (st *socketTransport) Close() {
-	st.close <- struct{}{}
-	<-st.done
+	st.shutdown()
 }
 
 func (st *socketTransport) writer() {
-	fmt.Println("Init heartbeat", pingPeriod.String())
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
-		fmt.Println("stop - writer")
 		ticker.Stop()
-		st.stop()
 	}()
+
 	for {
 		select {
+		case <-st.close:
+			return
+		case <-st.done:
+			return
 		case <-ticker.C:
+			if st.getIsConnecting() {
+				continue
+			}
+
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
-				fmt.Println("Push Heartbeat error:", err.Error())
-				st.closeAndReconnect()
-				return
+				st.logger.Warn("Error sending heartbeat: ", err)
 			}
 		}
 	}
 }
 
 func (st *socketTransport) listen() {
-	defer func() {
-		st.stop()
-	}()
 	st.socket.SetReadLimit(maxMessageSize)
 
 	for {
 		var msg Message
-		if err := st.socket.ReadJSON(&msg); err != nil {
-			fmt.Println("Error ReadJSON:", err.Error())
+
+		// While we don't have a connection, do not attempt to read
+		if st.getIsConnecting() || st.getIsReconnecting() {
+			time.Sleep(time.Second * 3)
 			continue
+		}
+
+		if err := st.socket.ReadJSON(&msg); err != nil {
+			st.logger.Warn("Error reading from socket.  Retrying connection: ", err)
+			if !st.getIsReconnecting() {
+				st.reconnect <- struct{}{}
+			}
+			time.Sleep(time.Second * 1)
 		}
 
 		st.mr.NotifyMessage(&msg)
 	}
 }
 
-func (st *socketTransport) stop() {
+func (st *socketTransport) shutdown() {
 	st.socket.Close()
 	st.cr.NotifyDisconnect()
+	st.done <- struct{}{}
 	st.setIsConnected(false)
-	func() { st.done <- struct{}{} }()
 }
 
 func (st *socketTransport) dial() error {
+	if st.getIsConnecting() {
+		return nil
+	}
+
+	st.setIsConnected(false)
+	st.setIsConnecting(true)
+	defer st.setIsConnecting(false)
+
 	conn, _, err := st.dialer.Dial(st.url.String(), st.header)
 
 	if err != nil {
 		return err
 	}
 
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	st.socket = conn
+	st.setSocket(conn)
+	st.setIsConnected(true)
 
 	return err
 }
 
-func (st *socketTransport) closeAndReconnect() {
-	st.stop()
-	go st.connect()
-}
-
-func (st *socketTransport) connect() {
-	b := getBackoff()
+func (st *socketTransport) connect() error {
 	rand.Seed(time.Now().UTC().UnixNano())
-	st.setIsConnected(false)
-	st.setIsConnecting(true)
-	defer st.setIsConnecting(false)
 
 	for {
-		nextItvl := b.Duration()
 		err := st.dial()
 
 		if err != nil {
-			fmt.Println(err)
-			fmt.Println("Error connecting - will try again in", nextItvl, "seconds.")
-			time.Sleep(nextItvl)
+			return err
 		}
 
-		fmt.Printf("Dial: connection was successfully established with %s\n", st.url.String())
-		st.setIsConnected(true)
-		return
+		st.logger.Debug("Connection was successfully established with socket")
+		break
 	}
+
+	go st.listen()
+	go st.writer()
+	go st.supervisor()
+	return nil
+}
+
+func (st *socketTransport) supervisor() {
+	for {
+		select {
+		case <-st.close:
+			return
+		case <-st.done:
+			return
+		case <-st.reconnect:
+			st.socket.Close()
+			st.setIsConnected(false)
+			st.setIsReconnecting(true)
+			st.cr.NotifyDisconnect()
+
+			for {
+				err := st.dial()
+				if err != nil {
+					duration := st.getBackoff().Duration()
+					st.logger.Debugf("Unable to reconnect to socket.  Attempting again in %s\n", duration)
+					time.Sleep(duration)
+					continue
+				}
+
+				st.setIsReconnecting(false)
+				st.getBackoff().Reset()
+				break
+			}
+		}
+	}
+}
+
+func (st *socketTransport) getIsConnected() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isConnected
+}
+
+func (st *socketTransport) getIsConnecting() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isConnecting
+}
+
+func (st *socketTransport) getIsReconnecting() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	return st.isReconnecting
 }
 
 func (st *socketTransport) setIsConnected(state bool) {
@@ -161,7 +228,10 @@ func (st *socketTransport) setIsConnected(state bool) {
 	defer st.mu.Unlock()
 
 	st.isConnected = state
-	st.cr.NotifyConnect()
+	if state {
+		time.Sleep(time.Millisecond * 200)
+		st.cr.NotifyConnect()
+	}
 }
 
 func (st *socketTransport) setIsConnecting(state bool) {
@@ -171,11 +241,30 @@ func (st *socketTransport) setIsConnecting(state bool) {
 	st.isConnecting = state
 }
 
-func getBackoff() backoff.Backoff {
-	return backoff.Backoff{
-		Min:    5 * time.Second,
-		Max:    30 * time.Second,
-		Factor: 2,
-		Jitter: true,
+func (st *socketTransport) setIsReconnecting(state bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.isReconnecting = state
+}
+
+func (st *socketTransport) setSocket(conn *websocket.Conn) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.socket = conn
+}
+
+func (st *socketTransport) getBackoff() *backoff.Backoff {
+	if st.backoff == nil {
+		b := &backoff.Backoff{
+			Min:    5 * time.Second,
+			Max:    30 * time.Second,
+			Factor: 2,
+			Jitter: true,
+		}
+		st.backoff = b
 	}
+
+	return st.backoff
 }

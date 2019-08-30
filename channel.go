@@ -15,6 +15,12 @@ type refCounter interface {
 	nextRef() int64
 }
 
+// Unsubscribe clears local state related to the channel, to be called when there
+// is an unexpected disconnect from the socket
+func (ch *Channel) Unsubscribe() {
+	ch.ln()
+}
+
 // Leave notifies the channel to unsubscribe from messages on the topic.
 func (ch *Channel) Leave(payload interface{}) error {
 	defer ch.ln()
