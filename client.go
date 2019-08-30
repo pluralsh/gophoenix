@@ -16,9 +16,15 @@ type Client struct {
 }
 
 // NewWebsocketClient creates the default connection using a websocket as the transport.
-func NewWebsocketClient(d *websocket.Dialer, cr ConnectionReceiver) *Client {
+func NewWebsocketClient(d *websocket.Dialer, cr ConnectionReceiver, logger Logger) *Client {
 	return &Client{
-		t:  &socketTransport{dialer: d},
+		t: &socketTransport{
+			dialer:    d,
+			done:      make(chan struct{}),
+			close:     make(chan struct{}),
+			reconnect: make(chan struct{}),
+			logger:    logger,
+		},
 		cr: cr,
 		mr: newMessageRouter(),
 	}
