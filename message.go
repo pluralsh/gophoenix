@@ -6,4 +6,5 @@ type Message struct {
 	Event   string      `json:"event"`
 	Payload interface{} `json:"payload"`
 	Ref     int64       `json:"ref"`
+	JoinRef int64       `json:"join_ref,omitempty"`
 }
