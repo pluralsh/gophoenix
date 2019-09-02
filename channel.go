@@ -2,17 +2,25 @@ package gophoenix
 
 // Channel represents a subscription to a topic. It is returned from the Client after joining a topic.
 type Channel struct {
-	topic string
-	t     Transport
-	rc    refCounter
-	rr    *replyRouter
-	ln    leaveNotifier
+	topic   string
+	joinRef int64
+	t       Transport
+	rc      refCounter
+	rr      *replyRouter
+	ln      leaveNotifier
 }
 
 type leaveNotifier func()
 
 type refCounter interface {
 	nextRef() int64
+}
+
+// GetJoinRef fetches the channel's join_ref.  This allows us to be able to potentially
+// ignore channel close messages.  If we have duplicate channels, the client must know which
+// instance is active, and it does so via the `joinRef` property
+func (ch *Channel) GetJoinRef() int64 {
+	return ch.joinRef
 }
 
 // Unsubscribe clears local state related to the channel, to be called when there
@@ -54,8 +62,22 @@ func (ch *Channel) PushNoReply(event string, payload interface{}) error {
 }
 
 func (ch *Channel) join(payload interface{}) error {
+	return ch.sendJoinMessage(payload)
+}
+
+func (ch *Channel) sendJoinMessage(payload interface{}) error {
 	ref := ch.rc.nextRef()
-	return ch.sendMessage(ref, string(JoinEvent), payload)
+	joinRef := ch.rc.nextRef()
+
+	msg := &Message{
+		Topic:   ch.topic,
+		Event:   string(JoinEvent),
+		Payload: payload,
+		Ref:     ref,
+		JoinRef: joinRef,
+	}
+
+	return ch.t.Push(msg)
 }
 
 func (ch *Channel) sendMessage(ref int64, event string, payload interface{}) error {

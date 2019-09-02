@@ -2,6 +2,7 @@ package gophoenix
 
 import (
 	"errors"
+	"math/rand"
 	"net/http"
 	"net/url"
 
@@ -56,8 +57,11 @@ func (c *Client) Join(callbacks ChannelReceiver, topic string, payload interface
 		return nil, errors.New("transport not provided")
 	}
 
+	rc := &atomicRef{ref: new(int64)}
+	joinRef := rand.Int63()
+
 	rr := newReplyRouter()
-	ch := &Channel{topic: topic, t: c.t, rc: &atomicRef{ref: new(int64)}, rr: rr, ln: func() { c.mr.unsubscribe(topic) }}
+	ch := &Channel{topic: topic, t: c.t, rc: rc, joinRef: joinRef, rr: rr, ln: func() { c.mr.unsubscribe(topic) }}
 	c.mr.subscribe(topic, callbacks, rr)
 	err := ch.join(payload)
 

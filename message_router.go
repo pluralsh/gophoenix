@@ -40,7 +40,7 @@ func (mr *messageRouter) NotifyMessage(msg *Message) {
 		tr.cr.OnJoinError(msg.Payload)
 		mr.unsubscribe(msg.Topic)
 	case string(CloseEvent):
-		tr.cr.OnChannelClose(msg.Payload)
+		tr.cr.OnChannelClose(msg.Payload, msg.JoinRef)
 		mr.unsubscribe(msg.Topic)
 	default:
 		tr.cr.OnMessage(msg.Ref, string(msg.Event), msg.Payload)
