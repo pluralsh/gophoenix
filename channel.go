@@ -54,8 +54,22 @@ func (ch *Channel) PushNoReply(event string, payload interface{}) error {
 }
 
 func (ch *Channel) join(payload interface{}) error {
+	return ch.sendJoinMessage(payload)
+}
+
+func (ch *Channel) sendJoinMessage(payload interface{}) error {
 	ref := ch.rc.nextRef()
-	return ch.sendMessage(ref, string(JoinEvent), payload)
+	joinRef := ch.rc.nextRef()
+
+	msg := &Message{
+		Topic:   ch.topic,
+		Event:   string(JoinEvent),
+		Payload: payload,
+		Ref:     ref,
+		JoinRef: joinRef,
+	}
+
+	return ch.t.Push(msg)
 }
 
 func (ch *Channel) sendMessage(ref int64, event string, payload interface{}) error {
