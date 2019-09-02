@@ -225,11 +225,11 @@ func (st *socketTransport) getIsReconnecting() bool {
 
 func (st *socketTransport) setIsConnected(state bool) {
 	st.mu.Lock()
-	defer st.mu.Unlock()
-
 	st.isConnected = state
+	st.mu.Unlock()
+
 	if state {
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 100)
 		st.cr.NotifyConnect()
 	}
 }
