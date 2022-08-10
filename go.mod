@@ -1,4 +1,4 @@
-module github.com/OneCloudInc/gophoenix
+module github.com/Workiva/gophoenix
 
 go 1.13
 
