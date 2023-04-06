@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,7 +26,8 @@ type longPollTransport struct {
 	isConnected    bool
 	isConnecting   bool
 	isReconnecting bool
-	awaitingAck    bool
+	isSending      bool
+	messageBuffer  []Message
 	mu             sync.RWMutex
 	url            url.URL
 	header         http.Header
@@ -76,6 +79,7 @@ func (lt *longPollTransport) poll() error {
 		return err
 	}
 
+	lt.addAuthHeaders(req)
 	req.Header.Add("content-type", "application/json")
 
 	resp, err := lt.client.Do(req)
@@ -106,19 +110,41 @@ func (lt *longPollTransport) getMessages() {
 }
 
 func (lt *longPollTransport) Push(data *Message) error {
+	var messagesToSend []Message
+
 	lt.mu.Lock()
-	defer lt.mu.Unlock()
+	if lt.isSending {
+		lt.messageBuffer = append(lt.messageBuffer, *data)
+		return nil
+	}
 
-	msgBytes, err := json.Marshal(data)
+	for _, msg := range lt.messageBuffer {
+		messagesToSend = append(messagesToSend, msg)
+	}
+
+	lt.isSending = true
+	lt.mu.Unlock()
+
+	defer lt.setIsSending(false)
+
+	// Joining all available messages together, separated by a newline
+	var jsonString strings.Builder
+	for _, msg := range messagesToSend {
+		msgBytes, err := json.Marshal(msg)
+		if err != nil {
+			return err
+		}
+
+		jsonString.WriteString(fmt.Sprintf("%s\n", string(msgBytes)))
+	}
+
+	resultString := strings.TrimSuffix(jsonString.String(), "\n")
+	req, err := http.NewRequest(http.MethodPost, lt.url.String(), bytes.NewReader([]byte(resultString)))
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, lt.url.String(), bytes.NewReader(msgBytes))
-	if err != nil {
-		return err
-	}
-
+	lt.addAuthHeaders(req)
 	req.Header.Add("content-type", "application/x-ndjson")
 
 	resp, err := lt.client.Do(req)
@@ -126,6 +152,9 @@ func (lt *longPollTransport) Push(data *Message) error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	// Response not used here, status code is the important piece
+	io.Copy(ioutil.Discard, resp.Body)
 
 	if resp.StatusCode > 204 {
 		return fmt.Errorf("received %d response from server after retries, message not delivered", resp.StatusCode)
@@ -219,6 +248,13 @@ func (lt *longPollTransport) setIsReconnecting(state bool) {
 	lt.isReconnecting = state
 }
 
+func (lt *longPollTransport) setIsSending(state bool) {
+	lt.mu.Lock()
+	defer lt.mu.Unlock()
+
+	lt.isSending = state
+}
+
 func (lt *longPollTransport) getBackoff() *backoff.Backoff {
 	if lt.backoff == nil {
 		b := &backoff.Backoff{
@@ -231,4 +267,13 @@ func (lt *longPollTransport) getBackoff() *backoff.Backoff {
 	}
 
 	return lt.backoff
+}
+
+func (lt *longPollTransport) addAuthHeaders(req *http.Request) {
+	// Auth headers for socket polling
+	for headerName, headerValues := range lt.header {
+		for _, headerValue := range headerValues {
+			req.Header.Add(headerName, headerValue)
+		}
+	}
 }
