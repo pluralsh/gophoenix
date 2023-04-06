@@ -31,6 +31,18 @@ func NewWebsocketClient(d *websocket.Dialer, cr ConnectionReceiver, logger Logge
 	}
 }
 
+// NewLongPollClient creates a client to long-poll a Phoenix channel using HTTP as the transport
+// protocol.
+func NewLongPollClient(client *http.Client, cr ConnectionReceiver, logger Logger) *Client {
+	return &Client{
+		t: &longPollTransport{
+			client: client,
+		},
+		cr: cr,
+		mr: newMessageRouter(),
+	}
+}
+
 // Connect should be called to establish the connection through the transport.
 func (c *Client) Connect(url url.URL, header http.Header) error {
 	if c.t == nil {
