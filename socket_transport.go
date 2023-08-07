@@ -14,10 +14,10 @@ import (
 
 const (
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 45 * time.Second
+	pongWait = 120 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 9) / 10
+	pingPeriod = 40 * time.Second
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 1 << 20
@@ -97,7 +97,7 @@ func (st *socketTransport) writer() {
 
 			lastBeat := time.UnixMilli(st.lastHeartbeat.Load())
 
-			if time.Now().Sub(lastBeat).Seconds() > float64(pongWait) {
+			if time.Now().Sub(lastBeat) > pongWait && !st.getIsReconnecting() {
 				st.reconnect <- struct{}{}
 				continue
 			}
@@ -218,6 +218,7 @@ func (st *socketTransport) supervisor() {
 					continue
 				}
 
+				st.lastHeartbeat.Store(time.Now().UnixMilli())
 				st.setIsReconnecting(false)
 				st.getBackoff().Reset()
 				break
