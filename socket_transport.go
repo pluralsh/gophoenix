@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -50,6 +51,7 @@ type socketTransport struct {
 	url            url.URL
 	header         http.Header
 	backoff        *backoff.Backoff
+	lastHeartbeat  *atomic.Int64
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -93,6 +95,13 @@ func (st *socketTransport) writer() {
 				continue
 			}
 
+			lastBeat := time.UnixMilli(st.lastHeartbeat.Load())
+
+			if time.Now().Sub(lastBeat).Seconds() > float64(pongWait) {
+				st.reconnect <- struct{}{}
+				continue
+			}
+
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				st.logger.Warn("Error sending heartbeat: ", err)
 			}
@@ -119,9 +128,24 @@ func (st *socketTransport) listen() {
 			}
 			time.Sleep(time.Second * 1)
 		}
+		if isHeartbeatResponse(&msg) {
+			st.handleHeartbeatResponse(&msg)
+		}
 
 		st.mr.NotifyMessage(&msg)
 	}
+}
+
+func (st *socketTransport) handleHeartbeatResponse(msg *Message) {
+	if body, ok := msg.Payload.(map[string]interface{}); ok {
+		if status, ok := body["status"].(string); ok && status == "ok" {
+			st.lastHeartbeat.Store(time.Now().UnixMilli())
+		}
+	}
+}
+
+func isHeartbeatResponse(msg *Message) bool {
+	return msg.Ref == -1 && msg.Topic == "phoenix" && msg.Event == "phx_reply"
 }
 
 func (st *socketTransport) shutdown() {

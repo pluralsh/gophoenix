@@ -1,8 +1,8 @@
 module github.com/Workiva/gophoenix
 
-go 1.13
+go 1.20
 
 require (
-	github.com/gorilla/websocket v1.4.0
-	github.com/jpillora/backoff v0.0.0-20170918002102-8eab2debe79d
+	github.com/gorilla/websocket v1.5.0
+	github.com/jpillora/backoff v1.0.0
 )
