@@ -98,6 +98,7 @@ func (st *socketTransport) writer() {
 			lastBeat := time.UnixMilli(st.lastHeartbeat.Load())
 
 			if time.Now().Sub(lastBeat) > pongWait && !st.getIsReconnecting() {
+				st.logger.Infof("Last heartbeat reply was at %v (%d seconds ago), exceeding deadline of %d seconds. Reconnecting socket", lastBeat, time.Now().Sub(lastBeat).Seconds(), pongWait.Seconds())
 				st.reconnect <- struct{}{}
 				continue
 			}
