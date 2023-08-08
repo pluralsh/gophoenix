@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,10 +14,10 @@ import (
 
 const (
 	// Time allowed to read the next pong message from the peer.
-	pongWait = 45 * time.Second
+	pongWait = 120 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 9) / 10
+	pingPeriod = 40 * time.Second
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 1 << 20
@@ -50,6 +51,7 @@ type socketTransport struct {
 	url            url.URL
 	header         http.Header
 	backoff        *backoff.Backoff
+	lastHeartbeat  *atomic.Int64
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -93,6 +95,14 @@ func (st *socketTransport) writer() {
 				continue
 			}
 
+			lastBeat := time.UnixMilli(st.lastHeartbeat.Load())
+
+			if time.Now().Sub(lastBeat) > pongWait && !st.getIsReconnecting() {
+				st.logger.Infof("Last heartbeat reply was at %v (%d seconds ago), exceeding deadline of %d seconds. Reconnecting socket", lastBeat, time.Now().Sub(lastBeat).Seconds(), pongWait.Seconds())
+				st.reconnect <- struct{}{}
+				continue
+			}
+
 			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
 				st.logger.Warn("Error sending heartbeat: ", err)
 			}
@@ -119,9 +129,24 @@ func (st *socketTransport) listen() {
 			}
 			time.Sleep(time.Second * 1)
 		}
+		if isHeartbeatResponse(&msg) {
+			st.handleHeartbeatResponse(&msg)
+		}
 
 		st.mr.NotifyMessage(&msg)
 	}
+}
+
+func (st *socketTransport) handleHeartbeatResponse(msg *Message) {
+	if body, ok := msg.Payload.(map[string]interface{}); ok {
+		if status, ok := body["status"].(string); ok && status == "ok" {
+			st.lastHeartbeat.Store(time.Now().UnixMilli())
+		}
+	}
+}
+
+func isHeartbeatResponse(msg *Message) bool {
+	return msg.Ref == -1 && msg.Topic == "phoenix" && msg.Event == "phx_reply"
 }
 
 func (st *socketTransport) shutdown() {
@@ -194,6 +219,7 @@ func (st *socketTransport) supervisor() {
 					continue
 				}
 
+				st.lastHeartbeat.Store(time.Now().UnixMilli())
 				st.setIsReconnecting(false)
 				st.getBackoff().Reset()
 				break

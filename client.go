@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -18,13 +20,16 @@ type Client struct {
 
 // NewWebsocketClient creates the default connection using a websocket as the transport.
 func NewWebsocketClient(d *websocket.Dialer, cr ConnectionReceiver, logger Logger) *Client {
+	lastHeartbeat := new(atomic.Int64)
+	lastHeartbeat.Store(time.Now().UnixMilli())
 	return &Client{
 		t: &socketTransport{
-			dialer:    d,
-			done:      make(chan struct{}),
-			close:     make(chan struct{}),
-			reconnect: make(chan struct{}),
-			logger:    logger,
+			dialer:        d,
+			done:          make(chan struct{}),
+			close:         make(chan struct{}),
+			reconnect:     make(chan struct{}),
+			logger:        logger,
+			lastHeartbeat: lastHeartbeat,
 		},
 		cr: cr,
 		mr: newMessageRouter(),
