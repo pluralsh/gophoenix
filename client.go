@@ -18,6 +18,10 @@ type Client struct {
 	cr ConnectionReceiver
 }
 
+func NewClient(cr ConnectionReceiver, logger Logger) *Client {
+	return NewWebsocketClient(websocket.DefaultDialer, cr, DefaultLogger)
+}
+
 // NewWebsocketClient creates the default connection using a websocket as the transport.
 func NewWebsocketClient(d *websocket.Dialer, cr ConnectionReceiver, logger Logger) *Client {
 	lastHeartbeat := new(atomic.Int64)

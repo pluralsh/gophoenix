@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kataras/golog"
+
 	"github.com/gorilla/websocket"
 	"github.com/jpillora/backoff"
 )
@@ -34,6 +36,8 @@ type Logger interface {
 	Warn(...interface{})
 	Warnf(string, ...interface{})
 }
+
+var DefaultLogger Logger = golog.New()
 
 type socketTransport struct {
 	socket         *websocket.Conn
@@ -66,8 +70,7 @@ func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageRe
 func (st *socketTransport) Push(data *Message) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-
-	if err := st.socket.WriteJSON(data); err != nil {
+	if err := st.socket.WriteJSON(ToRaw(data)); err != nil {
 		st.logger.Warn("Error sending message via socket: ", err.Error())
 		return err
 	}
@@ -115,20 +118,26 @@ func (st *socketTransport) listen() {
 
 	for {
 		var msg Message
-
 		// While we don't have a connection, do not attempt to read
 		if st.getIsConnecting() || st.getIsReconnecting() {
 			time.Sleep(time.Second * 3)
 			continue
 		}
 
-		if err := st.socket.ReadJSON(&msg); err != nil {
+		var raw []interface{}
+		if err := st.socket.ReadJSON(&raw); err != nil {
 			st.logger.Warn("Error reading from socket.  Retrying connection: ", err)
 			if !st.getIsReconnecting() {
 				st.reconnect <- struct{}{}
 			}
 			time.Sleep(time.Second * 1)
 		}
+
+		msg, err := FromRaw(raw)
+		if err != nil {
+			st.logger.Warn("%s", err)
+		}
+
 		if isHeartbeatResponse(&msg) {
 			st.handleHeartbeatResponse(&msg)
 		}
