@@ -18,7 +18,7 @@ type Client struct {
 	cr ConnectionReceiver
 }
 
-func NewClient(cr ConnectionReceiver, logger Logger) *Client {
+func NewClient(cr ConnectionReceiver) *Client {
 	return NewWebsocketClient(websocket.DefaultDialer, cr, DefaultLogger)
 }
 
