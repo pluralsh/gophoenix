@@ -1,4 +1,4 @@
-module github.com/Workiva/gophoenix
+module github.com/pluralsh/gophoenix
 
 go 1.20
 
