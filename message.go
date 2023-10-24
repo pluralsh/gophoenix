@@ -17,29 +17,33 @@ type Message struct {
 }
 
 func FromRaw(arr []interface{}) (msg Message, err error) {
-	if len(arr) != 4 {
+	if len(arr) != 5 {
 		err = protocolError
 		return
 	}
 
-	if arr[0] == nil || arr[2] == nil || arr[3] == nil {
+	if arr[2] == nil || arr[3] == nil {
 		err = protocolError
 		return
 	}
 
-	joinRef, _ := strconv.Atoi(arr[0].(string))
-
-	var ref int64 = 0
-	if arr[1] != nil {
-		rr, _ := strconv.Atoi(arr[1].(string))
-		ref = int64(rr)
-	}
-
-	msg.Ref = ref
-	msg.JoinRef = int64(joinRef)
+	msg.Ref = parseRef(arr[1])
+	msg.JoinRef = parseRef(arr[0])
 	msg.Topic = arr[2].(string)
 	msg.Event = arr[3].(string)
 	msg.Payload = arr[4].(map[string]interface{})
+	return
+}
+
+func parseRef(ref interface{}) (res int64) {
+	if ref == nil {
+		return
+	}
+	maybe, err := strconv.Atoi(ref.(string))
+	if err != nil {
+		return
+	}
+	res = int64(maybe)
 	return
 }
 

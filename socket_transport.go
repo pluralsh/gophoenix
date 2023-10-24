@@ -1,6 +1,7 @@
 package gophoenix
 
 import (
+	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -135,7 +136,7 @@ func (st *socketTransport) listen() {
 
 		msg, err := FromRaw(raw)
 		if err != nil {
-			st.logger.Warn("%s", err)
+			st.logger.Warn(fmt.Sprintf("%s", err))
 		}
 
 		if isHeartbeatResponse(&msg) {
