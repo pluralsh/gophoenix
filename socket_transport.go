@@ -132,6 +132,7 @@ func (st *socketTransport) listen() {
 				st.reconnect <- struct{}{}
 			}
 			time.Sleep(time.Second * 1)
+			continue
 		}
 
 		msg, err := FromRaw(raw)
