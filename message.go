@@ -37,7 +37,7 @@ func FromRaw(arr []interface{}) (msg Message, err error) {
 
 func parseRef(ref interface{}) (res int64) {
 	if ref == nil {
-		return
+		return -1
 	}
 	maybe, err := strconv.Atoi(ref.(string))
 	if err != nil {
@@ -47,11 +47,19 @@ func parseRef(ref interface{}) (res int64) {
 	return
 }
 
+func fromIntPtr(val int64) interface{} {
+	if val < 0 {
+		return nil
+	}
+
+	return strconv.Itoa(int(val))
+}
+
 func ToRaw(msg *Message) [5]interface{} {
 	var m [5]interface{}
 
-	m[0] = strconv.Itoa(int(msg.JoinRef))
-	m[1] = strconv.Itoa(int(msg.Ref))
+	m[0] = fromIntPtr(msg.JoinRef)
+	m[1] = fromIntPtr(msg.Ref)
 	m[2] = msg.Topic
 	m[3] = msg.Event
 	m[4] = msg.Payload

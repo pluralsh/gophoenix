@@ -109,7 +109,7 @@ func (st *socketTransport) writer() {
 				continue
 			}
 
-			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: map[string]string{}, Ref: st.rc.nextRef()}); err != nil {
+			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: map[string]string{}, JoinRef: -1, Ref: st.rc.nextRef()}); err != nil {
 				st.logger.Warn("Error sending heartbeat: ", err)
 			} else {
 				st.logger.Debug("issued socket heartbeat")
@@ -162,7 +162,7 @@ func (st *socketTransport) handleHeartbeatResponse(msg *Message) {
 }
 
 func isHeartbeatResponse(msg *Message) bool {
-	return msg.Ref == -1 && msg.Topic == "phoenix" && msg.Event == "phx_reply"
+	return msg.JoinRef == -1 && msg.Topic == "phoenix" && msg.Event == "phx_reply"
 }
 
 func (st *socketTransport) shutdown() {
