@@ -57,6 +57,7 @@ type socketTransport struct {
 	header         http.Header
 	backoff        *backoff.Backoff
 	lastHeartbeat  *atomic.Int64
+	lastRef        int64
 }
 
 func (st *socketTransport) Connect(url url.URL, header http.Header, mr MessageReceiver, cr ConnectionReceiver) error {
@@ -107,8 +108,10 @@ func (st *socketTransport) writer() {
 				continue
 			}
 
-			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: nil, Ref: -1}); err != nil {
+			if err := st.Push(&Message{Topic: "phoenix", Event: "heartbeat", Payload: map[string]string{}, Ref: st.lastRef + 1}); err != nil {
 				st.logger.Warn("Error sending heartbeat: ", err)
+			} else {
+				st.logger.Debug("issued socket heartbeat")
 			}
 		}
 	}
@@ -138,6 +141,8 @@ func (st *socketTransport) listen() {
 		msg, err := FromRaw(raw)
 		if err != nil {
 			st.logger.Warn(fmt.Sprintf("%s", err))
+		} else {
+			st.lastRef = msg.Ref
 		}
 
 		if isHeartbeatResponse(&msg) {
@@ -149,6 +154,7 @@ func (st *socketTransport) listen() {
 }
 
 func (st *socketTransport) handleHeartbeatResponse(msg *Message) {
+	st.logger.Debugf("Found heartbeat response %+v", msg.Payload)
 	if body, ok := msg.Payload.(map[string]interface{}); ok {
 		if status, ok := body["status"].(string); ok && status == "ok" {
 			st.lastHeartbeat.Store(time.Now().UnixMilli())
