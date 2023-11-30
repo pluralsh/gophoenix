@@ -38,7 +38,7 @@ type Logger interface {
 	Warnf(string, ...interface{})
 }
 
-var DefaultLogger Logger = golog.New()
+var DefaultLogger Logger = golog.Default
 
 type socketTransport struct {
 	socket         *websocket.Conn
