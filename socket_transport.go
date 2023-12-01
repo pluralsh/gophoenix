@@ -20,7 +20,7 @@ const (
 	pongWait = 120 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
-	pingPeriod = 40 * time.Second
+	pingPeriod = 30 * time.Second
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 1 << 20
@@ -136,7 +136,6 @@ func (st *socketTransport) listen() {
 				st.reconnect <- struct{}{}
 			}
 			time.Sleep(time.Second * 1)
-			continue
 		}
 
 		msg, err := FromRaw(raw)
